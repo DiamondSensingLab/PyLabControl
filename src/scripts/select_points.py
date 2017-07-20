@@ -18,6 +18,8 @@
 
 
 import numpy as np
+import pandas as pd
+import trackpy as tp
 import scipy.spatial
 import time
 from matplotlib import patches
@@ -28,7 +30,15 @@ class SelectPoints(Script):
     """
 Script to select points on an image. The selected points are saved and can be used in a superscript to iterate over.
     """
-    _DEFAULT_SETTINGS = [Parameter('patch_size', 0.003)]
+    _DEFAULT_SETTINGS = [
+        Parameter('patch_size', 0.01),
+        Parameter('nv_selection_method', 'manual',['manual', 'automatic', 'loaded'],'Identify NVs by mouse clicks or by automatic trackpy routine'),
+        Parameter('nv_size_est', 5, int, 'estimate of NV size [pixels]'),
+        Parameter('nv_mass_min', 0, float, 'maximum NV integrated brightness expected [pixels]'),
+        Parameter('coords_file', 'C:\Users\sensing\Documents\RAW_DATA\___.csv', str, 'file to load NV coordinates from for "loaded" selection'),
+        Parameter('coord_offset_x', 0, float, 'x offset btw current glavo image and coordinate list'),
+        Parameter('coord_offset_y', 0, float, 'y offset btw current glavo image and coordinate list')
+    ]
 
     _INSTRUMENTS = {}
     _SCRIPTS = {}
@@ -47,7 +57,7 @@ Script to select points on an image. The selected points are saved and can be us
         Waits until stopped to keep script live. Gui must handle calling of Toggle_NV function on mouse click.
         """
 
-        self.data = {'nv_locations': [], 'image_data': None, 'extent': None}
+        self.data = {'nv_locations': [], 'nv_masses': [], 'nv_sizes':[], 'image_data': None, 'extent': None}
 
         self.progress = 50
         self.updateProgress.emit(self.progress)
@@ -65,6 +75,7 @@ Script to select points on an image. The selected points are saved and can be us
             figure_list:
         '''
         # if there is not image data get it from the current plot
+        print('here we are')
         if not self.data == {} and self.data['image_data'] is  None:
             axes = figure_list[0].axes[0]
             if len(axes.images)>0:
@@ -75,6 +86,22 @@ Script to select points on an image. The selected points are saved and can be us
                 self.plot_settings['ylabel'] = axes.get_ylabel()
                 self.plot_settings['title'] = axes.get_title()
                 self.plot_settings['interpol'] = axes.images[0].get_interpolation()
+
+        if self.data['nv_locations']==[]:
+            if self.settings['nv_selection_method']=='automatic':
+                nvsauto = tp.locate(self.data['image_data'],self.settings['nv_size_est'], minmass = self.settings['nv_mass_min'], invert=False)
+                nvcoords = [self.pixel_to_voltage(p, self.data['extent'], np.shape(self.data['image_data'])) for p in nvsauto[['x', 'y']].as_matrix()]
+                self.data['nv_locations'] = nvcoords
+                # self.data['nv_masses'] = nvsauto['mass']
+                # self.data['nv_sizes'] = nvcoords['size']
+            elif self.settings['nv_selection_method']=='loaded':
+                coordstmp = np.loadtxt(self.settings['coords_file'], delimiter=',')
+                coordstmp[:,0] = coordstmp[:,0] + self.settings['coord_offset_x']
+                coordstmp[:,1] = coordstmp[:,1] + self.settings['coord_offset_y']
+                coordstmp = coordstmp.tolist()
+                coordstmp.pop(0)
+                self.data['nv_locations'] = coordstmp
+
 
         Script.plot(self, figure_list)
 
@@ -128,6 +155,29 @@ Script to select points on an image. The selected points are saved and can be us
                     )
             self.patches.append(text)
 
+        # histaxes = axes_list[1]
+        # # histaxes.subplot(121)
+        # histaxes.hold(False)
+        # histaxes.hist(self.data['nv_masses'],bins=20)
+        # histaxes.subplot(122)
+        # histaxes.hold(False)
+        # histaxes.hist(self.data['nv_sizes'],bins=20)
+
+    def get_axes_layout(self, figure_list):
+        """
+        returns the axes objects the script needs to plot its data
+        the default creates a single axes object on each figure
+        This can/should be overwritten in a child script if more axes objects are needed
+        Args:
+            figure_list: a list of figure objects
+        Returns:
+            axes_list: a list of axes objects
+
+        """
+
+        # only pick the first figure from the figure list, this avoids that get_axes_layout clears all the figures
+        return super(SelectPoints, self).get_axes_layout([figure_list[0]])
+
     def toggle_NV(self, pt):
         '''
         If there is not currently a selected NV within self.settings[patch_size] of pt, adds it to the selected list. If
@@ -138,7 +188,7 @@ Script to select points on an image. The selected points are saved and can be us
         Poststate: updates selected list
 
         '''
-        if not self.data['nv_locations']: #if self.data is empty so this is the first point
+        if self.data['nv_locations']==[]: #if self.data is empty so this is the first point
             self.data['nv_locations'].append(pt)
             self.data['image_data'] = None # clear image data
 
@@ -151,10 +201,39 @@ Script to select points on an image. The selected points are saved and can be us
             # removes NV if previously selected
             if d is not np.inf:
                 self.data['nv_locations'].pop(i)
+                # if not self.data['nv_masses']==[]:
+                #     self.data['nv_masses'].pop(i)
+                # if not self.data['nv_sizes']==[]:
+                #     self.data['nv_sizes'].pop(i)
             # adds NV if not previously selected
             else:
                 self.data['nv_locations'].append(pt)
 
+            print('chosen [x,y]:', pt)
+
+    @staticmethod
+    def pixel_to_voltage(pt, extent, image_dimensions):
+        """"
+        pt: point in pixels
+        extent: [xVmin, Vmax, Vmax, yVmin] in volts
+        image_dimensions: dimensions of image in pixels
+
+        Returns: point in volts
+        """
+
+        image_x_len, image_y_len = image_dimensions
+        image_x_min, image_x_max, image_y_max, image_y_min = extent
+
+        assert image_x_max > image_x_min
+        assert image_y_max > image_y_min
+
+        volt_per_px_x = (image_x_max - image_x_min) / (image_x_len - 1)
+        volt_per_px_y = (image_y_max - image_y_min) / (image_y_len - 1)
+
+        V_x = volt_per_px_x * pt[0] + image_x_min
+        V_y = volt_per_px_y * pt[1] + image_y_min
+
+        return [V_x, V_y]
 
 if __name__ == '__main__':
 

@@ -1,0 +1,84 @@
+import glob, os
+
+def rename_filename(temp,fullpath):
+
+    k = temp.rfind('freq')
+    k2 = temp.find('freq')
+
+
+    if k>0 and k>k2:
+        name_end = temp[k:]
+        name_start = temp[:k2]
+        final_name = name_start+name_end
+        full_old_name = os.path.join(fullpath,temp)
+        full_new_name = os.path.join(fullpath,final_name)
+        print('renaming:\n>BEF>%s\n>AFT>%s'%(full_old_name,full_new_name))
+        #print(os.path.exists(full_old_name))
+        #print(os.path.exists(full_new_name))
+        os.rename(full_old_name,full_new_name)
+        renamed = True
+    else:
+        final_name = temp
+        print('skipping %s'%(temp))
+        renamed = False
+    return final_name,renamed
+
+if __name__=='__main__':
+
+    #temp = '170804-07_42_08_deer_freq274MHz_pwr-12dBm_freq274MHz_pwr-12dBm_freq274MHz_pwr-12dBm_freq274MHz_pwr-12dBm_freq274MHz_pwr-12dBm_freq174MHz_pwr-18dBm'
+
+    rootdir = os.path.join('C:\\','Users','sensing','Documents','RAW_DATA','08_03_2017_Ulm_CleanControl_beforeVOPc8','170803-20_46_59_esrrabideer_vsNVsGr3','data_subscripts')
+
+    #print('Checking for rootdir'),
+    #print(os.path.exists(rootdir))
+
+    print('Starting...')
+
+    for curdir in os.listdir(rootdir):
+        #print(curdir)
+        #print('Checking for curdir'),
+        #print(os.path.exists(os.path.join(rootdir,curdir)))
+
+        if 'esr_rabi_deer' in curdir:
+
+            print('-----------Currently in: %s-----------'%(curdir))
+
+            dir_to_process = os.path.join(rootdir, curdir, 'data_subscripts')
+            print(dir_to_process)
+
+            for subdir in os.listdir(dir_to_process):
+
+                #print('Checking for subdir'),
+                #print(os.path.exists(os.path.join(dir_to_process,subdir)))
+
+                final_name,renamed = rename_filename(subdir,"\\\\?\\"+dir_to_process)
+
+                print('########################')
+
+                renamed_something = False
+                for file in os.listdir(os.path.join(dir_to_process,final_name)):
+
+                    #print('Checking for new subdir %s' % (os.path.join(dir_to_process, final_name)))
+                    #print(os.path.exists(os.path.join(dir_to_process, final_name)))
+
+                    #print('Checking for file %s'%(os.path.join("\\\\?\\"+dir_to_process, final_name, file)))
+                    #print(os.path.exists(os.path.join("\\\\?\\"+dir_to_process, final_name, file)))
+
+                    _,renamed2 = rename_filename(file,os.path.join("\\\\?\\"+dir_to_process,final_name))
+                    if renamed2:
+                        renamed_something = True
+
+            #if final_name != subdir:
+            #    assert (1 == 0)
+
+
+                 #   rename_filename(file)
+
+
+
+
+    #assert(1==0)
+
+        #for curfile in os.listdir(curdir):
+
+         #   rename_filename(curfile)
